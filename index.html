@@ -1224,6 +1224,8 @@
       <p class="ob-sub">Type your name to start winning today.</p>
       <input class="ob-input" id="obNameInput" type="text" placeholder="Your name" maxlength="24" autocomplete="off">
       <button class="ob-btn" id="obNameNext">Begin →</button>
+      <label class="ob-skip" for="obOnboardImport">Already have data? Import backup</label>
+      <input type="file" id="obOnboardImport" style="display:none">
     </div>
   </div>
 
@@ -2230,6 +2232,28 @@ function runOnboarding(onComplete) {
   const nameNext  = document.getElementById('obNameNext');
 
   nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') nameNext.click(); });
+
+  // Import from onboarding welcome screen
+  const obOnboardImport = document.getElementById('obOnboardImport');
+  if (obOnboardImport) {
+    obOnboardImport.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const data = JSON.parse(ev.target.result);
+          if (data.lifeRPG_player)   localStorage.setItem(KEYS.player,   data.lifeRPG_player);
+          if (data.lifeRPG_habits)   localStorage.setItem(KEYS.habits,   data.lifeRPG_habits);
+          if (data.lifeRPG_log)      localStorage.setItem(KEYS.log,      data.lifeRPG_log);
+          if (data.lifeRPG_missions) localStorage.setItem(KEYS.missions, data.lifeRPG_missions);
+          if (data.lifeRPG_setup)    localStorage.setItem(KEYS.setup,    data.lifeRPG_setup);
+          location.reload();
+        } catch(err) { alert('Invalid backup file: ' + err.message); }
+      };
+      reader.readAsText(file);
+    });
+  }
   nameNext.addEventListener('click', () => {
     try {
       const val = nameInput.value.trim();
