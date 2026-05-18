@@ -868,7 +868,8 @@
   }
   .onboarding-overlay.hidden { display: none; }
 
-  #authOverlay { z-index: 1100; }
+  #authOverlay { z-index: 1100; display: flex; }
+  #authOverlay.hidden { display: none; }
 
   .ob-screen { display: none; width: 100%; }
   .ob-screen.active { display: flex; justify-content: center; }
@@ -1195,7 +1196,7 @@
   </div>
 </div>
 
-<div class="onboarding-overlay" id="authOverlay" style="display:flex">
+<div class="onboarding-overlay" id="authOverlay">
   <div class="ob-screen active">
     <div class="ob-inner">
       <div class="ob-eyebrow">Life RPG</div>
