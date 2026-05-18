@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LIFE RPG</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   /* ============================================================
@@ -55,6 +56,7 @@
     min-height: 100vh;
     padding-bottom: 80px;
     line-height: 1.5;
+    overflow-x: hidden;
   }
 
   /* ============================================================
@@ -94,7 +96,7 @@
     font-weight: 500;
   }
 
-  /* XP Bar — taller, editorial */
+  /* XP Bar - taller, editorial */
   .xp-section { display: flex; flex-direction: column; gap: 7px; }
 
   .xp-labels {
@@ -232,7 +234,7 @@
   }
 
   /* ============================================================
-     HABIT CARDS — swipe-to-undo system
+     HABIT CARDS - swipe-to-undo system
      Structure per row:
        .card-row            <- clipping container
          .undo-reveal       <- red undo layer underneath
@@ -554,7 +556,7 @@
      RESPONSIVE
      ============================================================ */
   /* ============================================================
-     PAGE SYSTEM — horizontal swipe between Habits / Missions
+     PAGE SYSTEM - horizontal swipe between Habits / Missions
      ============================================================ */
   .pages-wrapper {
     display: flex;
@@ -1033,6 +1035,14 @@
   .ob-mission-add-row .ob-input { flex: 1; }
   .ob-mission-add-row .ob-add-btn { white-space: nowrap; }
 
+  .auth-error {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: #e05c5c;
+    min-height: 16px;
+    letter-spacing: 0.04em;
+  }
+
   .skip-reveal {
     position: absolute;
     inset: 0;
@@ -1183,6 +1193,24 @@
   </div>
 </div>
 
+<div class="onboarding-overlay" id="authOverlay" style="display:flex">
+  <div class="ob-screen active">
+    <div class="ob-inner">
+      <div class="ob-eyebrow">Life RPG</div>
+      <h1 class="ob-title" id="authTitle">Welcome back.</h1>
+      <p class="ob-sub" id="authSub">Sign in to sync your progress across devices.</p>
+      <input class="ob-input" id="authEmail" type="email" placeholder="Email" autocomplete="email">
+      <input class="ob-input" id="authPassword" type="password" placeholder="Password" autocomplete="current-password">
+      <div class="auth-error" id="authError"></div>
+      <button class="ob-btn" id="authSubmit">Sign in →</button>
+      <button class="ob-skip" id="authToggle">No account yet? Sign up</button>
+      <button class="ob-skip" id="authSkip">Play offline (no sync)</button>
+      <label class="ob-skip" for="obWelcomeImport">Already have a backup? Import it</label>
+      <input type="file" id="obWelcomeImport" style="display:none">
+    </div>
+  </div>
+</div>
+
 <div class="onboarding-overlay" id="onboardingOverlay">
 
   <!-- Screen 1: Name -->
@@ -1255,7 +1283,9 @@
     <div class="settings-title">Data</div>
     <button class="settings-action" id="exportBtn">↓ Export progress</button>
     <label class="settings-action" for="importFile">↑ Import progress</label>
-    <input type="file" id="importFile" accept=".json" style="display:none">
+    <input type="file" id="importFile"  style="display:none">
+    <div class="settings-title" style="margin-top:8px">Account</div>
+    <button class="settings-action" id="signOutBtn">→ Sign out</button>
   </div>
 </div>
 
@@ -1273,9 +1303,57 @@
 'use strict';
 
 /* ================================================================
+   SUPABASE CONFIG
+   ================================================================ */
+const SUPABASE_URL = 'https://lanfehcvxcfejtpyhtpg.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxhbmZlaGN2eGNmZWp0cHlodHBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgxNzczMTMsImV4cCI6MjA5Mzc1MzMxM30.2JfCQjFPTDpdxJSbasUCsztoWPIGF5YMQ0OU9ekI0Rw';
+const sb = typeof supabase !== 'undefined' ? supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+
+/* ================================================================
+   SUPABASE SYNC
+   Offline-first: localStorage is source of truth.
+   Supabase is synced in background - failures are silent.
+   ================================================================ */
+const sync = {
+  async push() {
+    try {
+      if (!sb) return;
+      const { data: { user } } = await sb.auth.getUser();
+      if (!user) return;
+      await sb.from('saves').upsert({
+        id:       user.id,
+        player:   JSON.parse(localStorage.getItem(KEYS.player)   || '{}'),
+        habits:   JSON.parse(localStorage.getItem(KEYS.habits)   || '{}'),
+        log:      JSON.parse(localStorage.getItem(KEYS.log)      || '{}'),
+        missions: JSON.parse(localStorage.getItem(KEYS.missions) || '{}'),
+        setup:    JSON.parse(localStorage.getItem(KEYS.setup)    || 'null'),
+        updated_at: new Date().toISOString(),
+      });
+    } catch(e) { console.warn('Sync push failed:', e.message); }
+  },
+
+  async pull() {
+    try {
+      if (!sb) return false;
+      const { data: { user } } = await sb.auth.getUser();
+      if (!user) return false;
+      const { data, error } = await sb.from('saves').select('*').eq('id', user.id).single();
+      if (error || !data) return false;
+      if (data.player)   localStorage.setItem(KEYS.player,   JSON.stringify(data.player));
+      if (data.habits)   localStorage.setItem(KEYS.habits,   JSON.stringify(data.habits));
+      if (data.log)      localStorage.setItem(KEYS.log,      JSON.stringify(data.log));
+      if (data.missions) localStorage.setItem(KEYS.missions, JSON.stringify(data.missions));
+      if (data.setup)    localStorage.setItem(KEYS.setup,    JSON.stringify(data.setup));
+      return true;
+    } catch(e) { console.warn('Sync pull failed:', e.message); return false; }
+  },
+};
+
+
+/* ================================================================
    HABIT DEFINITIONS
-   FUTURE: add `attribute` field (mind/body/business/connection)
-   FUTURE: add `streakUnlock` for skill unlocks
+   FUTURE: add "attribute" field (mind/body/business/connection)
+   FUTURE: add "streakUnlock" for skill unlocks
    ================================================================ */
 const HABIT_DEFINITIONS = [
   { id: 'wake_630',      label: 'Wake up at 6:30',       section: 'routines', xp: 10, sub: '6:30 AM sharp' },
@@ -1298,12 +1376,12 @@ const HABIT_DEFINITIONS = [
 
 /* ================================================================
    MISSION DEFINITIONS
-   Year goals — permanent, 500 XP each on completion
+   Year goals - permanent, 500 XP each on completion
    FUTURE: sub-goal checklist support for all missions
    FUTURE: progress bar for countable goals
    ================================================================ */
 const MISSION_DEFINITIONS = [
-  // ── Life Goals 2026 ──────────────────────────────────────────
+  // -- Life Goals 2026 ------------------------------------------
   {
     id: 'psych_bachelor', label: 'Finish Psychology Bachelor', column: 'life', xp: 500,
     subGoals: [
@@ -1326,7 +1404,7 @@ const MISSION_DEFINITIONS = [
   { id: 'avg_getup',     label: 'Avg get up pre 7:00',          column: 'life', xp: 500 },
   { id: 'm_24x',         label: 'M: < 24x',                     column: 'life', xp: 500 },
 
-  // ── Fitness Goals 2026 ───────────────────────────────────────
+  // -- Fitness Goals 2026 ---------------------------------------
   { id: 'run_1000km',    label: 'Run 1000km',                   column: 'fitness', xp: 500 },
   { id: 'marathon_4h',   label: 'Run sub 4h Marathon',          column: 'fitness', xp: 500 },
   { id: '10km_50',       label: '10km in <50\' with more ease', column: 'fitness', xp: 500 },
@@ -1341,7 +1419,7 @@ const MISSION_DEFINITIONS = [
   { id: 'handstand_20',  label: '20s handstand',                 column: 'fitness', xp: 500 },
   { id: 'sixpack',       label: 'Sixpack',                       column: 'fitness', xp: 500 },
 
-  // ── Music Goals 2026 ─────────────────────────────────────────
+  // -- Music Goals 2026 -----------------------------------------
   { id: 'songs_20',      label: 'Release 20 songs',             column: 'music', xp: 500, progress: { current: 6, total: 20 } },
   { id: 'tiktok_10k',    label: '10.000 TikTok followers',      column: 'music', xp: 500 },
   { id: 'yt_1000',       label: '1000 YouTube subs',            column: 'music', xp: 500 },
@@ -1357,6 +1435,13 @@ const MISSION_DEFINITIONS = [
   { id: 'busking',       label: 'Try busking once',             column: 'music', xp: 500 },
 ];
 
+const KEYS = {
+  player:   'lifeRPG_player',
+  habits:   'lifeRPG_habits',
+  log:      'lifeRPG_log',
+  missions: 'lifeRPG_missions',
+  setup:    'lifeRPG_setup',   // FUTURE: edit mode reads/writes here too
+};
 
 /* ================================================================
    DEFINITIONS LOADER
@@ -1376,15 +1461,8 @@ function getDefinitions() {
 }
 
 
-  player:   'lifeRPG_player',
-  habits:   'lifeRPG_habits',
-  log:      'lifeRPG_log',
-  missions: 'lifeRPG_missions',
-  setup:    'lifeRPG_setup',   // FUTURE: edit mode reads/writes here too
-};
-
 /* ================================================================
-   XP LOGIC — exponential level scaling
+   XP LOGIC - exponential level scaling
    Formula: xpForLevel(n) = floor(100 * n^1.5)
    FUTURE: adjust curve multiplier per character class
    ================================================================ */
@@ -1406,8 +1484,8 @@ const xpLogic = {
 };
 
 /* ================================================================
-   HABIT LOGIC — pure, no DOM
-   FUTURE: streak milestones → skill unlocks
+   HABIT LOGIC - pure, no DOM
+   FUTURE: streak milestones -> skill unlocks
    FUTURE: quest system hooks: habitLogic.isCompletedToday(id)
    ================================================================ */
 const habitLogic = {
@@ -1505,6 +1583,7 @@ function loadMissions() {
 
 function saveMissions(missions) {
   localStorage.setItem(KEYS.missions, JSON.stringify(missions));
+  sync.push(); // background cloud sync
 }
 
 function loadState() {
@@ -1519,10 +1598,11 @@ function saveState(player, habits, log) {
   localStorage.setItem(KEYS.player, JSON.stringify(player));
   localStorage.setItem(KEYS.habits, JSON.stringify(habits));
   localStorage.setItem(KEYS.log,    JSON.stringify(log));
+  sync.push(); // background cloud sync
 }
 
 /* ================================================================
-   UI RENDERING — all DOM work here
+   UI RENDERING - all DOM work here
    FUTURE: renderCharacterSheet() plugs in here
    FUTURE: renderQuestBoard() plugs in here
    ================================================================ */
@@ -1535,12 +1615,12 @@ function renderHabitCard(habit, habits, log, yesterday = false) {
   row.className = 'card-row';
   row.dataset.id = habit.id;
 
-  // Skip hint layer — visible during right swipe (incomplete cards only)
+  // Skip hint layer - visible during right swipe (incomplete cards only)
   const skipLayer = document.createElement('div');
   skipLayer.className = 'skip-reveal';
   skipLayer.innerHTML = `<span class="skip-hint">✕ Skip</span>`;
 
-  // Undo / unskip layer — visible on left swipe
+  // Undo / unskip layer - visible on left swipe
   const undoLayer = document.createElement('div');
   undoLayer.className = 'undo-reveal';
   if (done)    undoLayer.innerHTML = `<button class="undo-btn" data-undo="${habit.id}">↩ Undo</button>`;
@@ -1675,9 +1755,9 @@ function showLevelUp(level) {
 /* ================================================================
    SWIPE-TO-UNDO
    Tracks touch/mouse start X on completed cards only.
-   Swipe left > 48px  → reveal undo button (row gets .swiped)
-   Swipe right / tap elsewhere → snap back
-   Tap undo button → reverse completion, slide card back to top
+   Swipe left > 48px  -> reveal undo button (row gets .swiped)
+   Swipe right / tap elsewhere -> snap back
+   Tap undo button -> reverse completion, slide card back to top
    ================================================================ */
 function attachSwipeListeners(list, getState, setState) {
   let startX = 0, startY = 0, swipedRow = null, isDragging = false;
@@ -1695,7 +1775,7 @@ function attachSwipeListeners(list, getState, setState) {
     setTimeout(() => row.classList.remove('snapping'), 220);
   }
 
-  // ── Touch events ──────────────────────────────────────────────
+  // -- Touch events ----------------------------------------------
   list.addEventListener('touchstart', (e) => {
     const row = e.target.closest('.card-row');
     if (!row) return;
@@ -1748,7 +1828,7 @@ function attachSwipeListeners(list, getState, setState) {
     swipedRow = null; isDragging = false;
   }, { passive: true });
 
-  // ── Mouse events (desktop) ────────────────────────────────────
+  // -- Mouse events (desktop) ------------------------------------
   list.addEventListener('mousedown', (e) => {
     const row = e.target.closest('.card-row');
     if (!row) return;
@@ -1796,7 +1876,7 @@ function attachSwipeListeners(list, getState, setState) {
     swipedRow = null; isDragging = false;
   });
 
-  // Tap anywhere outside an open row → snap it back
+  // Tap anywhere outside an open row -> snap it back
   document.addEventListener('touchstart', (e) => {
     list.querySelectorAll('.card-row.swiped').forEach(r => {
       if (!r.contains(e.target)) snapBack(r);
@@ -1809,9 +1889,9 @@ function attachSwipeListeners(list, getState, setState) {
     });
   });
 
-  // ── Undo button tap ───────────────────────────────────────────
+  // -- Undo button tap -------------------------------------------
   list.addEventListener('click', (e) => {
-    // ── Unskip button ──
+    // -- Unskip button --
     const unskipBtn = e.target.closest('[data-unskip]');
     if (unskipBtn) {
       e.stopPropagation();
@@ -2057,7 +2137,7 @@ function renderMissions(missions, onUpdate) {
 }
 
 /* ================================================================
-   PAGE NAVIGATION — horizontal swipe / dot tap
+   PAGE NAVIGATION - horizontal swipe / dot tap
    ================================================================ */
 function initNavigation(onPageChange) {
   const wrapper = document.getElementById('pagesWrapper');
@@ -2099,7 +2179,7 @@ function getHabitDefs() { return getDefinitions().habits; }
 
 /* ================================================================
    ONBOARDING
-   Gates init() — only shows if no lifeRPG_setup in localStorage.
+   Gates init() - only shows if no lifeRPG_setup in localStorage.
    FUTURE: edit mode re-opens specific screens
    ================================================================ */
 function runOnboarding(onComplete) {
@@ -2111,7 +2191,7 @@ function runOnboarding(onComplete) {
   let selectedDomains = [];
   let missionsByDomain = {}; // { domainName: [{ label }] }
 
-  // ── Helpers ──────────────────────────────────────────────────
+  // -- Helpers --------------------------------------------------
   function showScreen(id) {
     document.querySelectorAll('.ob-screen').forEach(s => s.classList.remove('active'));
     document.getElementById(id).classList.add('active');
@@ -2142,28 +2222,32 @@ function runOnboarding(onComplete) {
     return slug;
   }
 
-  // ── Screen 1: Name ───────────────────────────────────────────
+  // -- Screen 1: Name -------------------------------------------
   const nameInput = document.getElementById('obNameInput');
   const nameNext  = document.getElementById('obNameNext');
 
   nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') nameNext.click(); });
   nameNext.addEventListener('click', () => {
-    const val = nameInput.value.trim();
-    if (!val) { nameInput.focus(); return; }
-    playerName = val;
-    showScreen('obRoutines');
+    try {
+      const val = nameInput.value.trim();
+      if (!val) { nameInput.focus(); return; }
+      playerName = val;
+      showScreen('obRoutines');
+    } catch(e) {
+      alert('Error: ' + e.message + '\n' + e.stack);
+    }
   });
 
-  // ── Screen 2: Daily Routines ─────────────────────────────────
-  const rLabelInput = document.getElementById('obRoutineLabel');
-  const rSubInput   = document.getElementById('obRoutineSub');
-  const rAddBtn     = document.getElementById('obRoutineAdd');
-  const rList       = document.getElementById('obRoutineList');
-  const rNext       = document.getElementById('obRoutinesNext');
-  const rSkip       = document.getElementById('obRoutinesSkip');
+  // -- Screen 2: Daily Routines ---------------------------------
+  const rLabelInput  = document.getElementById('obRoutineLabel');
+  const rSubInput    = document.getElementById('obRoutineSub');
+  const rAddBtn      = document.getElementById('obRoutineAdd');
+  const obRList      = document.getElementById('obRoutineList');
+  const rNext        = document.getElementById('obRoutinesNext');
+  const rSkip        = document.getElementById('obRoutinesSkip');
 
   function refreshRoutineList() {
-    renderList(rList, routineHabits, (i) => { routineHabits.splice(i, 1); refreshRoutineList(); });
+    renderList(obRList, routineHabits, (i) => { routineHabits.splice(i, 1); refreshRoutineList(); });
   }
 
   function addRoutine() {
@@ -2182,16 +2266,16 @@ function runOnboarding(onComplete) {
   rNext.addEventListener('click', () => showScreen('obOutput'));
   rSkip.addEventListener('click', () => showScreen('obOutput'));
 
-  // ── Screen 3: Content Output ─────────────────────────────────
-  const oLabelInput = document.getElementById('obOutputLabel');
-  const oSubInput   = document.getElementById('obOutputSub');
-  const oAddBtn     = document.getElementById('obOutputAdd');
-  const oList       = document.getElementById('obOutputList');
-  const oNext       = document.getElementById('obOutputNext');
-  const oSkip       = document.getElementById('obOutputSkip');
+  // -- Screen 3: Content Output ---------------------------------
+  const oLabelInput  = document.getElementById('obOutputLabel');
+  const oSubInput    = document.getElementById('obOutputSub');
+  const oAddBtn      = document.getElementById('obOutputAdd');
+  const obOList      = document.getElementById('obOutputList');
+  const oNext        = document.getElementById('obOutputNext');
+  const oSkip        = document.getElementById('obOutputSkip');
 
   function refreshOutputList() {
-    renderList(oList, outputHabits, (i) => { outputHabits.splice(i, 1); refreshOutputList(); });
+    renderList(obOList, outputHabits, (i) => { outputHabits.splice(i, 1); refreshOutputList(); });
   }
 
   function addOutput() {
@@ -2210,7 +2294,7 @@ function runOnboarding(onComplete) {
   oNext.addEventListener('click', () => showScreen('obMissions'));
   oSkip.addEventListener('click', () => showScreen('obMissions'));
 
-  // ── Screen 4: Missions / Domains ─────────────────────────────
+  // -- Screen 4: Missions / Domains -----------------------------
   const domainsEl        = document.getElementById('obDomains');
   const customBtn        = document.getElementById('obDomainCustomBtn');
   const customInput      = document.getElementById('obCustomDomainInput');
@@ -2258,6 +2342,8 @@ function runOnboarding(onComplete) {
         inp.focus();
         refreshColList();
       }
+
+      inp._addFn = addMission;
 
       addBtn.addEventListener('click', addMission);
       inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') addMission(); });
@@ -2309,6 +2395,14 @@ function runOnboarding(onComplete) {
   });
 
   function finish() {
+    // Auto-add anything still typed but not yet added
+    if (rLabelInput.value.trim()) addRoutine();
+    if (oLabelInput.value.trim()) addOutput();
+    // Auto-add any unsubmitted mission inputs
+    document.querySelectorAll('.ob-mission-add-row input').forEach(inp => {
+      if (inp.value.trim() && inp._addFn) inp._addFn();
+    });
+
     // Build habits array
     const allHabits = [...routineHabits, ...outputHabits];
 
@@ -2344,6 +2438,7 @@ function runOnboarding(onComplete) {
 }
 
 
+/* ================================================================
    FUTURE: prune log entries older than 90 days here
    FUTURE: archive yesterday for analytics
    ================================================================ */
@@ -2360,7 +2455,7 @@ function init() {
   const onMissionUpdate = (xpAmount) => {
     const result = xpLogic.addXP(player, xpAmount);
     player = result.player;
-    missions = loadMissions(); // reload from storage — renderMissions saved it already
+    missions = loadMissions(); // reload from storage - renderMissions saved it already
     saveState(player, habits, log);
     renderAll(player, habits, log, missions, onMissionUpdate);
     if (result.levelsGained > 0) setTimeout(() => showLevelUp(player.level), 350);
@@ -2388,7 +2483,7 @@ function init() {
     if (page === 1) renderMissions(missions, onMissionUpdate);
   });
 
-  // ── Yesterday toggle ─────────────────────────────────────────
+  // -- Yesterday toggle -----------------------------------------
   let viewingYesterday = false;
   const yesterdayToggle = document.getElementById('yesterdayToggle');
   const yesterdayLabel  = document.getElementById('yesterdayLabel');
@@ -2433,7 +2528,7 @@ function init() {
     if (levelsGained > 0) setTimeout(() => showLevelUp(player.level), 350);
   });
 
-  // ── Settings drawer ──────────────────────────────────────────
+  // -- Settings drawer ------------------------------------------
   const settingsBtn      = document.getElementById('settingsBtn');
   const settingsDrawer   = document.getElementById('settingsDrawer');
   const settingsBackdrop = document.getElementById('settingsBackdrop');
@@ -2446,12 +2541,19 @@ function init() {
   settingsBtn.addEventListener('click', () => settingsDrawer.classList.contains('open') ? closeSettings() : openSettings());
   settingsBackdrop.addEventListener('click', closeSettings);
 
+  document.getElementById('signOutBtn').addEventListener('click', async () => {
+    await sb.auth.signOut();
+    closeSettings();
+    location.reload();
+  });
+
   exportBtn.addEventListener('click', () => {
     const data = {
       lifeRPG_player:   localStorage.getItem(KEYS.player),
       lifeRPG_habits:   localStorage.getItem(KEYS.habits),
       lifeRPG_log:      localStorage.getItem(KEYS.log),
       lifeRPG_missions: localStorage.getItem(KEYS.missions),
+      lifeRPG_setup:    localStorage.getItem(KEYS.setup),
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url  = URL.createObjectURL(blob);
@@ -2468,13 +2570,14 @@ function init() {
     reader.onload = (ev) => {
       try {
         const data = JSON.parse(ev.target.result);
-        if (data.lifeRPG_player) localStorage.setItem(KEYS.player,   data.lifeRPG_player);
-        if (data.lifeRPG_habits) localStorage.setItem(KEYS.habits,   data.lifeRPG_habits);
-        if (data.lifeRPG_log)    localStorage.setItem(KEYS.log,      data.lifeRPG_log);
+        if (data.lifeRPG_player)   localStorage.setItem(KEYS.player,   data.lifeRPG_player);
+        if (data.lifeRPG_habits)   localStorage.setItem(KEYS.habits,   data.lifeRPG_habits);
+        if (data.lifeRPG_log)      localStorage.setItem(KEYS.log,      data.lifeRPG_log);
         if (data.lifeRPG_missions) localStorage.setItem(KEYS.missions, data.lifeRPG_missions);
+        if (data.lifeRPG_setup)    localStorage.setItem(KEYS.setup,    data.lifeRPG_setup);
         closeSettings();
         location.reload();
-      } catch { alert('Invalid backup file.'); }
+      } catch(e) { alert('Invalid backup file: ' + e.message); }
     };
     reader.readAsText(file);
     importFile.value = '';
@@ -2493,20 +2596,150 @@ function init() {
 }
 
 /* ================================================================
+   AUTH
+   ================================================================ */
+async function runAuth(onComplete) {
+  const overlay  = document.getElementById('authOverlay');
+  const title    = document.getElementById('authTitle');
+  const sub      = document.getElementById('authSub');
+  const emailEl  = document.getElementById('authEmail');
+  const passEl   = document.getElementById('authPassword');
+  const errorEl  = document.getElementById('authError');
+  const submitBtn = document.getElementById('authSubmit');
+  const toggleBtn = document.getElementById('authToggle');
+  const skipBtn  = document.getElementById('authSkip');
+
+  let isSignUp = false;
+
+  toggleBtn.addEventListener('click', () => {
+    isSignUp = !isSignUp;
+    title.textContent    = isSignUp ? 'Create account.' : 'Welcome back.';
+    sub.textContent      = isSignUp ? 'Sign up to sync your progress across devices.' : 'Sign in to sync your progress across devices.';
+    submitBtn.textContent = isSignUp ? 'Sign up →' : 'Sign in →';
+    toggleBtn.textContent = isSignUp ? 'Already have an account? Sign in' : 'No account yet? Sign up';
+    errorEl.textContent  = '';
+  });
+
+  // Import from welcome screen (also works from auth screen)
+  const welcomeImport = document.getElementById('obWelcomeImport');
+  if (welcomeImport) {
+    welcomeImport.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const data = JSON.parse(ev.target.result);
+          if (data.lifeRPG_player)   localStorage.setItem(KEYS.player,   data.lifeRPG_player);
+          if (data.lifeRPG_habits)   localStorage.setItem(KEYS.habits,   data.lifeRPG_habits);
+          if (data.lifeRPG_log)      localStorage.setItem(KEYS.log,      data.lifeRPG_log);
+          if (data.lifeRPG_missions) localStorage.setItem(KEYS.missions, data.lifeRPG_missions);
+          if (data.lifeRPG_setup)    localStorage.setItem(KEYS.setup,    data.lifeRPG_setup);
+          location.reload();
+        } catch(err) { alert('Invalid backup file: ' + err.message); }
+      };
+      reader.readAsText(file);
+    });
+  }
+
+  skipBtn.addEventListener('click', () => {
+    overlay.classList.add('hidden');
+    onComplete(false);
+  });
+
+  submitBtn.addEventListener('click', async () => {
+    const email    = emailEl.value.trim();
+    const password = passEl.value;
+    if (!email || !password) { errorEl.textContent = 'Please fill in both fields.'; return; }
+
+    submitBtn.textContent = '...';
+    submitBtn.disabled = true;
+    errorEl.textContent = '';
+
+    try {
+      let result;
+      if (isSignUp) {
+        result = await sb.auth.signUp({ email, password });
+      } else {
+        result = await sb.auth.signInWithPassword({ email, password });
+      }
+
+      if (result.error) {
+        errorEl.textContent = result.error.message;
+        submitBtn.textContent = isSignUp ? 'Sign up →' : 'Sign in →';
+        submitBtn.disabled = false;
+        return;
+      }
+
+      // Pull cloud data if signing in
+      if (!isSignUp) {
+        await sync.pull();
+      }
+
+      overlay.classList.add('hidden');
+      onComplete(true);
+    } catch(e) {
+      errorEl.textContent = e.message;
+      submitBtn.textContent = isSignUp ? 'Sign up →' : 'Sign in →';
+      submitBtn.disabled = false;
+    }
+  });
+
+  // Enter key support
+  [emailEl, passEl].forEach(el => {
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitBtn.click(); });
+  });
+}
+
+/* ================================================================
    ENTRY POINT
    ================================================================ */
-(function() {
+(async function() {
+  const authOverlay = document.getElementById('authOverlay');
+  console.log('Entry point running');
+  console.log('supabase defined:', typeof supabase !== 'undefined');
+  console.log('authOverlay:', authOverlay);
+
+  // If Supabase failed to load, go straight to offline mode
+  if (typeof supabase === 'undefined') {
+    console.log('Supabase not loaded - going offline');
+    authOverlay.classList.add('hidden');
+    startApp();
+    return;
+  }
+
+  try {
+    console.log('Checking session...');
+    const { data: { session } } = await sb.auth.getSession();
+    console.log('Session:', session);
+    if (session) {
+      await sync.pull();
+      authOverlay.classList.add('hidden');
+      startApp();
+    } else {
+      console.log('No session - showing auth');
+      runAuth(async () => { startApp(); });
+    }
+  } catch(e) {
+    console.log('Error:', e.message);
+    authOverlay.classList.add('hidden');
+    startApp();
+  }
+})();
+
+async function startApp() {
   const setup = localStorage.getItem(KEYS.setup);
   if (!setup) {
-    // New user — run onboarding then init
-    runOnboarding(() => init());
+    runOnboarding(() => {
+      sync.push();
+      init();
+    });
   } else {
-    // Returning user — hide onboarding, start game
     const overlay = document.getElementById('onboardingOverlay');
     if (overlay) overlay.classList.add('hidden');
     init();
   }
-})();
+}
 </script>
 </body>
 </html>
