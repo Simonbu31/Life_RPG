@@ -2675,7 +2675,7 @@ async function runAuth(onComplete) {
 
       // Pull cloud data if signing in
       if (!isSignUp) {
-        await sync.pull();
+        try { await sync.pull(); } catch(e) { console.warn('Pull failed:', e.message); }
       }
 
       overlay.classList.add('hidden');
@@ -2711,11 +2711,10 @@ async function runAuth(onComplete) {
   }
 
   try {
-    console.log('Checking session...');
     const { data: { session } } = await sb.auth.getSession();
     console.log('Session:', session);
     if (session) {
-      await sync.pull();
+      try { await sync.pull(); } catch(e) { console.warn('Pull failed, continuing:', e.message); }
       authOverlay.classList.add('hidden');
       startApp();
     } else {
