@@ -1823,10 +1823,10 @@ function showSkipToast(habitIdOrMessage) {
   setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 1800);
 }
 
-function showBonusToast() {
+function showBonusToast(msg) {
   const t = document.createElement('div');
   t.className = 'skip-toast';
-  t.textContent = '🏆 All habits done — +20 bonus XP';
+  t.textContent = msg || '🏆 All habits done — +20 bonus XP';
   document.body.appendChild(t);
   setTimeout(() => t.classList.add('show'), 10);
   setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 2400);
@@ -2662,7 +2662,6 @@ function init() {
   const feedbackError   = document.getElementById('feedbackError');
   const feedbackSubmit  = document.getElementById('feedbackSubmit');
   const feedbackCancel  = document.getElementById('feedbackCancel');
-  const feedbackBackdrop = document.getElementById('feedbackBackdrop');
 
   document.getElementById('feedbackBtn').addEventListener('click', () => {
     closeSettings();
@@ -2679,7 +2678,6 @@ function init() {
   }
 
   feedbackCancel.addEventListener('click', closeFeedback);
-  feedbackBackdrop.addEventListener('click', closeFeedback);
 
   feedbackSubmit.addEventListener('click', async () => {
     const msg = feedbackText.value.trim();
@@ -2695,11 +2693,12 @@ function init() {
         user_id: user?.id || null,
         message: msg,
       });
-      if (error) throw error;
+      if (error) { console.error('Feedback error:', error); throw error; }
       closeFeedback();
-      showSkipToast('Bug reported - thanks!');
+      showBonusToast('Bug reported - thanks! 🙏');
     } catch(e) {
-      feedbackError.textContent = 'Failed to send. Try again.';
+      console.error('Feedback catch:', e);
+      feedbackError.textContent = 'Failed to send: ' + e.message;
       feedbackSubmit.textContent = 'Send ->';
       feedbackSubmit.disabled = false;
     }
