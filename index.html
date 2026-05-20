@@ -1038,7 +1038,73 @@
   .ob-mission-add-row .ob-input { flex: 1; }
   .ob-mission-add-row .ob-add-btn { white-space: nowrap; }
 
-  .auth-error {
+  .feedback-modal {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 600;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(4px);
+    padding: 24px;
+  }
+  .feedback-modal.hidden { display: none; }
+
+  .feedback-box {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-mid);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    width: 100%;
+    max-width: 420px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .feedback-title {
+    font-family: var(--font-display);
+    font-size: 20px;
+    color: var(--text-primary);
+  }
+
+  .feedback-sub {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-top: -4px;
+  }
+
+  .feedback-textarea {
+    width: 100%;
+    background: var(--bg-base);
+    border: 1px solid var(--border-mid);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: 13px;
+    resize: vertical;
+    outline: none;
+    transition: border-color var(--transition);
+    box-sizing: border-box;
+  }
+  .feedback-textarea:focus { border-color: var(--amber); }
+  .feedback-textarea::placeholder { color: var(--text-dim); }
+
+  .feedback-error {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: #e05c5c;
+    min-height: 14px;
+  }
+
+  .feedback-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 16px;
+  }
     font-family: var(--font-mono);
     font-size: 11px;
     color: #e05c5c;
@@ -1291,10 +1357,24 @@
     <input type="file" id="importFile"  style="display:none">
     <div class="settings-title" style="margin-top:8px">Account</div>
     <button class="settings-action" id="signOutBtn">→ Sign out</button>
+    <div class="settings-title" style="margin-top:8px">Feedback</div>
+    <button class="settings-action" id="feedbackBtn">↗ Report a bug</button>
   </div>
 </div>
 
-<div class="settings-backdrop" id="settingsBackdrop"></div>
+<div class="feedback-modal hidden" id="feedbackModal">
+  <div class="feedback-box">
+    <div class="feedback-title">Report a bug</div>
+    <p class="feedback-sub">What went wrong? Be as specific as you can.</p>
+    <textarea class="feedback-textarea" id="feedbackText" placeholder="Describe the issue..." rows="4"></textarea>
+    <div class="feedback-error" id="feedbackError"></div>
+    <div class="feedback-actions">
+      <button class="ob-skip" id="feedbackCancel">Cancel</button>
+      <button class="ob-btn" id="feedbackSubmit" style="margin-top:0; padding: 10px 20px;">Send →</button>
+    </div>
+  </div>
+</div>
+<div class="settings-backdrop" id="feedbackBackdrop"></div>
 
 <div class="levelup-overlay" id="levelupOverlay">
   <div class="levelup-box">
@@ -1730,12 +1810,12 @@ function showXPPopup(amount, el) {
   setTimeout(() => p.remove(), 1200);
 }
 
-function showSkipToast(habitId) {
-  const habit = getHabitDefs().find(h => h.id === habitId);
-  if (!habit) return;
+function showSkipToast(habitIdOrMessage) {
+  const habit = getHabitDefs().find(h => h.id === habitIdOrMessage);
+  const text = habit ? `${habit.label} - skipped for today` : habitIdOrMessage;
   const t = document.createElement('div');
   t.className = 'skip-toast';
-  t.textContent = `${habit.label} — skipped for today`;
+  t.textContent = text;
   document.body.appendChild(t);
   setTimeout(() => t.classList.add('show'), 10);
   setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 1800);
@@ -2572,6 +2652,55 @@ function init() {
     await sb.auth.signOut();
     closeSettings();
     location.reload();
+  });
+
+  // -- Feedback -------------------------------------------------
+  const feedbackModal   = document.getElementById('feedbackModal');
+  const feedbackText    = document.getElementById('feedbackText');
+  const feedbackError   = document.getElementById('feedbackError');
+  const feedbackSubmit  = document.getElementById('feedbackSubmit');
+  const feedbackCancel  = document.getElementById('feedbackCancel');
+  const feedbackBackdrop = document.getElementById('feedbackBackdrop');
+
+  document.getElementById('feedbackBtn').addEventListener('click', () => {
+    closeSettings();
+    feedbackModal.classList.remove('hidden');
+    feedbackText.focus();
+  });
+
+  function closeFeedback() {
+    feedbackModal.classList.add('hidden');
+    feedbackText.value = '';
+    feedbackError.textContent = '';
+    feedbackSubmit.textContent = 'Send ->';
+    feedbackSubmit.disabled = false;
+  }
+
+  feedbackCancel.addEventListener('click', closeFeedback);
+  feedbackBackdrop.addEventListener('click', closeFeedback);
+
+  feedbackSubmit.addEventListener('click', async () => {
+    const msg = feedbackText.value.trim();
+    if (!msg) { feedbackError.textContent = 'Please describe the issue.'; return; }
+
+    feedbackSubmit.textContent = '...';
+    feedbackSubmit.disabled = true;
+    feedbackError.textContent = '';
+
+    try {
+      const { data: { user } } = sb ? await sb.auth.getUser() : { data: { user: null } };
+      const { error } = await sb.from('feedback').insert({
+        user_id: user?.id || null,
+        message: msg,
+      });
+      if (error) throw error;
+      closeFeedback();
+      showSkipToast('Bug reported - thanks!');
+    } catch(e) {
+      feedbackError.textContent = 'Failed to send. Try again.';
+      feedbackSubmit.textContent = 'Send ->';
+      feedbackSubmit.disabled = false;
+    }
   });
 
   exportBtn.addEventListener('click', () => {
