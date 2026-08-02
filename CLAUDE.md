@@ -36,6 +36,9 @@ A personal habit tracker styled as a video game character sheet. Single HTML fil
 SUPABASE CONFIG + SYNC (sync.push, sync.pull)
 DEFINITIONS LOADER (getDefinitions, getHabitDefs)
 KEYS (localStorage key constants)
+DEFAULT_COLUMNS / DEFAULT_SECTION_LABELS (fallback labels)
+SHARED HELPERS (slugify, renderList - used by onboarding and the editors)
+EDIT SETUP (getEditableSetup - staged copy of habits/missions/columns/sectionLabels)
 XP LOGIC (exponential scaling: floor(100 * level^1.5))
 HABIT LOGIC (complete, skip, unskip, streaks, yesterday backfill)
 MISSION DEFINITIONS (hardcoded year goals)
@@ -50,6 +53,7 @@ MISSIONS RENDERING + INTERACTION
 PAGE NAVIGATION (tab bar: Habits / Missions)
 AUTH (runAuth — email/password, sign up/in, offline mode)
 ONBOARDING (runOnboarding — 4 screens: name, routines, output, domains)
+EDIT HABITS / EDIT GOALS (openHabitsEditor, openGoalsEditor - post-onboarding editors)
 MIDNIGHT RESET
 INIT (wires everything together)
 ENTRY POINT (async IIFE — checks Supabase session, routes to auth or game)
@@ -95,10 +99,20 @@ ENTRY POINT (async IIFE — checks Supabase session, routes to auth or game)
 - `getDefinitions()` reads from setup if present, falls back to hardcoded defs
 
 ### Settings (⚙ icon top right)
+- Edit Habits → opens editor to add/delete habits and rename the two section headings
+- Edit Goals → opens editor to add/delete goals and rename the goal columns
 - Export progress → downloads JSON backup
 - Import progress → loads JSON backup, reloads page
 - Sign out
 - Report a bug → submits to Supabase `feedback` table
+
+### Edit Habits / Edit Goals (post-onboarding editing)
+- Two modals, opened from Settings, independent of the onboarding wizard (never touches `lifeRPG_player`, so editing never resets XP/level)
+- Both are add/delete only for now (no renaming or XP-editing of individual habits/goals) with an explicit Save/Cancel — nothing writes to storage until Save is tapped
+- Edit Habits also lets you rename the "Daily Routines" / "Content Output" section headings (stored as `lifeRPG_setup.sectionLabels`, falls back to `DEFAULT_SECTION_LABELS` if unset)
+- Edit Goals also lets you rename the goal columns in place (mutates `col.label` directly in the staged column list)
+- `getEditableSetup()` is the shared entry point both editors use to get a full, deep-cloned, always-populated staging copy of `{name, habits, missions, columns, sectionLabels}` to mutate before Save
+- The whole modal box scrolls as one unit (title + list + Save/Cancel together) rather than trying to pin a header/footer around an inner scroll region — that inner-scroll approach was tried first and was unreliable across browsers, so don't reintroduce it
 
 ---
 
@@ -118,7 +132,7 @@ lifeRPG_player   — { level, totalXP, currentXP, name }
 lifeRPG_habits   — { habitId: { streak, lastCompleted } }
 lifeRPG_log      — { "YYYY-MM-DD": { habitId: true | "skipped" | { skipped: true, prevStreak: N } } }
 lifeRPG_missions — { missionId: { done, progress } }
-lifeRPG_setup    — { name, habits, missions, columns } (null habits/missions = use hardcoded)
+lifeRPG_setup    — { name, habits, missions, columns, sectionLabels } (null habits/missions = use hardcoded; sectionLabels = { routines, content })
 ```
 
 ---
@@ -146,7 +160,7 @@ SSH is set up, no password needed.
 - Skill unlocks after X-day streaks
 - PWA wrapper (installable, offline)
 - App Store consideration (would need Capacitor or Swift rewrite)
-- Onboarding edit mode (currently locked after setup)
+- Rename/XP-edit of individual existing habits and goals (Edit Habits/Edit Goals currently only support add + delete)
 
 ---
 
