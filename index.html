@@ -1051,6 +1051,12 @@
   }
   .feedback-modal.hidden { display: none; }
 
+  .editor-modal {
+    align-items: flex-start;
+    overflow-y: auto;
+  }
+  .editor-modal .feedback-box { margin: 40px auto; }
+
   .feedback-box {
     background: var(--bg-panel);
     border: 1px solid var(--border-mid);
@@ -1111,6 +1117,32 @@
     min-height: 16px;
     letter-spacing: 0.04em;
   }
+
+  .editor-box {
+    max-width: 520px;
+  }
+  .editor-scroll {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .editor-heading-input {
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--border-mid);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--amber);
+    padding: 4px 2px 6px;
+    margin-bottom: 8px;
+    width: 100%;
+    outline: none;
+    transition: border-color var(--transition);
+  }
+  .editor-heading-input:focus { border-bottom-color: var(--amber); }
 
   .skip-reveal {
     position: absolute;
@@ -1200,7 +1232,7 @@
 
   <div class="section-header">
     <div class="section-left">
-      <span class="section-title">Daily Routines</span>
+      <span class="section-title" id="routinesSectionTitle">Daily Routines</span>
       <span class="section-tag routines">Discipline</span>
     </div>
     <span class="section-meta" id="routinesMeta">0 / 9</span>
@@ -1209,7 +1241,7 @@
 
   <div class="section-header">
     <div class="section-left">
-      <span class="section-title">Content Output</span>
+      <span class="section-title" id="contentSectionTitle">Content Output</span>
       <span class="section-tag content">Output</span>
     </div>
     <span class="section-meta" id="contentMeta">0 / 5</span>
@@ -1357,6 +1389,9 @@
     <button class="settings-action" id="exportBtn">↓ Export progress</button>
     <label class="settings-action" for="importFile">↑ Import progress</label>
     <input type="file" id="importFile" style="display:none">
+    <div class="settings-title" style="margin-top:8px">Customize</div>
+    <button class="settings-action" id="editHabitsBtn">✎ Edit Habits</button>
+    <button class="settings-action" id="editGoalsBtn">✎ Edit Goals</button>
     <div class="settings-title" style="margin-top:8px">Account</div>
     <button class="settings-action" id="signOutBtn">→ Sign out</button>
     <div class="settings-title" style="margin-top:8px">Feedback</div>
@@ -1374,6 +1409,46 @@
     <div class="feedback-actions">
       <button class="ob-skip" id="feedbackCancel">Cancel</button>
       <button class="ob-btn" id="feedbackSubmit" style="margin-top:0; padding: 10px 20px;">Send →</button>
+    </div>
+  </div>
+</div>
+
+<div class="feedback-modal editor-modal hidden" id="habitsEditorModal">
+  <div class="feedback-box editor-box">
+    <div class="feedback-title">Edit Habits</div>
+    <div class="editor-scroll">
+      <input class="editor-heading-input" id="editRoutinesHeading" type="text" maxlength="30" placeholder="Section name">
+      <div class="ob-add-row">
+        <input class="ob-input ob-input-sm" id="editRoutineLabel" type="text" placeholder="Habit name" maxlength="40">
+        <input class="ob-input ob-input-sm" id="editRoutineSub" type="text" placeholder="Sub-label (optional)" maxlength="40">
+        <button class="ob-add-btn" id="editRoutineAdd">+ Add</button>
+      </div>
+      <div class="ob-list" id="editRoutineList"></div>
+
+      <input class="editor-heading-input" id="editOutputHeading" type="text" maxlength="30" placeholder="Section name" style="margin-top:16px">
+      <div class="ob-add-row">
+        <input class="ob-input ob-input-sm" id="editOutputLabel" type="text" placeholder="Output habit" maxlength="40">
+        <input class="ob-input ob-input-sm" id="editOutputSub" type="text" placeholder="Sub-label (optional)" maxlength="40">
+        <button class="ob-add-btn" id="editOutputAdd">+ Add</button>
+      </div>
+      <div class="ob-list" id="editOutputList"></div>
+    </div>
+    <div class="feedback-error" id="habitsEditorError"></div>
+    <div class="feedback-actions">
+      <button class="ob-skip" id="habitsEditorCancel">Cancel</button>
+      <button class="ob-btn" id="habitsEditorSave" style="margin-top:0; padding: 10px 20px;">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="feedback-modal editor-modal hidden" id="goalsEditorModal">
+  <div class="feedback-box editor-box">
+    <div class="feedback-title">Edit Goals</div>
+    <div class="editor-scroll" id="goalsEditorColumns"></div>
+    <div class="feedback-error" id="goalsEditorError"></div>
+    <div class="feedback-actions">
+      <button class="ob-skip" id="goalsEditorCancel">Cancel</button>
+      <button class="ob-btn" id="goalsEditorSave" style="margin-top:0; padding: 10px 20px;">Save</button>
     </div>
   </div>
 </div>
@@ -1538,12 +1613,63 @@ const KEYS = {
    ================================================================ */
 function getDefinitions() {
   const setup = localStorage.getItem(KEYS.setup);
-  if (!setup) return { habits: HABIT_DEFINITIONS, missions: MISSION_DEFINITIONS, columns: null };
+  if (!setup) return { habits: HABIT_DEFINITIONS, missions: MISSION_DEFINITIONS, columns: null, sectionLabels: DEFAULT_SECTION_LABELS };
   const s = JSON.parse(setup);
   return {
-    habits:   s.habits   || HABIT_DEFINITIONS,
-    missions: s.missions || MISSION_DEFINITIONS,
-    columns:  s.columns  || null,
+    habits:        s.habits        || HABIT_DEFINITIONS,
+    missions:      s.missions      || MISSION_DEFINITIONS,
+    columns:       s.columns       || null,
+    sectionLabels: s.sectionLabels || DEFAULT_SECTION_LABELS,
+  };
+}
+
+const DEFAULT_COLUMNS = [
+  { key: 'life',    label: 'Life Goals 2026' },
+  { key: 'fitness', label: 'Fitness Goals 2026' },
+  { key: 'music',   label: 'Music Goals 2026' },
+];
+
+const DEFAULT_SECTION_LABELS = { routines: 'Daily Routines', content: 'Content Output' };
+
+function slugify(str, existingIds) {
+  let base = str.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 20);
+  let slug = base, n = 1;
+  while (existingIds.includes(slug)) { slug = `${base}_${n++}`; }
+  return slug;
+}
+
+function renderList(listEl, items, onRemove) {
+  listEl.innerHTML = '';
+  items.forEach((item, i) => {
+    const el = document.createElement('div');
+    el.className = 'ob-list-item';
+    el.innerHTML = `
+      <div>
+        <div class="ob-list-item-text">${item.label}</div>
+        ${item.sub ? `<div class="ob-list-item-sub">${item.sub}</div>` : ''}
+      </div>
+      <button class="ob-list-remove" data-i="${i}">✕</button>
+    `;
+    el.querySelector('.ob-list-remove').addEventListener('click', () => onRemove(i));
+    listEl.appendChild(el);
+  });
+}
+
+/* ================================================================
+   EDIT SETUP - staged copy of the effective habit/mission/column
+   definitions, used by the Edit Habits / Edit Goals modals.
+   ================================================================ */
+function getEditableSetup() {
+  const raw = localStorage.getItem(KEYS.setup);
+  const base = raw ? JSON.parse(raw) : {};
+  const defs = getDefinitions();
+  const player = JSON.parse(localStorage.getItem(KEYS.player) || 'null') || {};
+  return {
+    name:          base.name          || player.name || '',
+    habits:        (base.habits        || defs.habits).map(h => ({ ...h })),
+    missions:      (base.missions      || defs.missions).map(m => ({ ...m })),
+    columns:       (base.columns       || defs.columns || DEFAULT_COLUMNS).map(c => ({ ...c })),
+    sectionLabels: { ...(base.sectionLabels || defs.sectionLabels) },
   };
 }
 
@@ -1740,6 +1866,10 @@ function renderHabits(player, habits, log, yesterday = false) {
   const rList = document.getElementById('routinesList');
   const cList = document.getElementById('contentList');
   rList.innerHTML = ''; cList.innerHTML = '';
+
+  const { sectionLabels } = getDefinitions();
+  document.getElementById('routinesSectionTitle').textContent = sectionLabels.routines;
+  document.getElementById('contentSectionTitle').textContent  = sectionLabels.content;
 
   const isCompleted = (id) => yesterday
     ? habitLogic.isCompletedYesterday(log, id)
@@ -2107,11 +2237,7 @@ function renderMissions(missions, onUpdate) {
 
   const columns = colDefs
     ? colDefs.map(c => ({ key: c.key, label: c.label }))
-    : [
-        { key: 'life',    label: 'Life Goals 2026' },
-        { key: 'fitness', label: 'Fitness Goals 2026' },
-        { key: 'music',   label: 'Music Goals 2026' },
-      ];
+    : DEFAULT_COLUMNS;
 
   columns.forEach(col => {
     const colEl = document.createElement('div');
@@ -2285,29 +2411,7 @@ function runOnboarding(onComplete) {
     window.scrollTo(0, 0);
   }
 
-  function renderList(listEl, items, onRemove) {
-    listEl.innerHTML = '';
-    items.forEach((item, i) => {
-      const el = document.createElement('div');
-      el.className = 'ob-list-item';
-      el.innerHTML = `
-        <div>
-          <div class="ob-list-item-text">${item.label}</div>
-          ${item.sub ? `<div class="ob-list-item-sub">${item.sub}</div>` : ''}
-        </div>
-        <button class="ob-list-remove" data-i="${i}">✕</button>
-      `;
-      el.querySelector('.ob-list-remove').addEventListener('click', () => onRemove(i));
-      listEl.appendChild(el);
-    });
-  }
-
-  function slugify(str, existing) {
-    let base = str.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 20);
-    let slug = base, n = 1;
-    while (existing.includes(slug)) { slug = `${base}_${n++}`; }
-    return slug;
-  }
+  // renderList() and slugify() are shared top-level helpers (see near getDefinitions)
 
   // -- Screen 1: Name -------------------------------------------
   const nameInput = document.getElementById('obNameInput');
@@ -2702,6 +2806,201 @@ function init() {
       feedbackSubmit.textContent = 'Send ->';
       feedbackSubmit.disabled = false;
     }
+  });
+
+  // -- Edit Habits ------------------------------------------------
+  const habitsEditorModal = document.getElementById('habitsEditorModal');
+  const habitsEditorError = document.getElementById('habitsEditorError');
+  const editRoutineList   = document.getElementById('editRoutineList');
+  const editOutputList    = document.getElementById('editOutputList');
+  const editRoutineLabel  = document.getElementById('editRoutineLabel');
+  const editRoutineSub    = document.getElementById('editRoutineSub');
+  const editOutputLabel   = document.getElementById('editOutputLabel');
+  const editOutputSub     = document.getElementById('editOutputSub');
+  const editRoutineAdd    = document.getElementById('editRoutineAdd');
+  const editOutputAdd     = document.getElementById('editOutputAdd');
+  const editRoutinesHeading = document.getElementById('editRoutinesHeading');
+  const editOutputHeading   = document.getElementById('editOutputHeading');
+
+  let editHabitsState = null;
+
+  function renderEditRoutines() {
+    const routines = editHabitsState.habits.filter(h => h.section === 'routines');
+    renderList(editRoutineList, routines, (i) => {
+      const id = routines[i].id;
+      editHabitsState.habits = editHabitsState.habits.filter(h => h.id !== id);
+      renderEditRoutines();
+    });
+  }
+
+  function renderEditOutput() {
+    const output = editHabitsState.habits.filter(h => h.section === 'content');
+    renderList(editOutputList, output, (i) => {
+      const id = output[i].id;
+      editHabitsState.habits = editHabitsState.habits.filter(h => h.id !== id);
+      renderEditOutput();
+    });
+  }
+
+  function openHabitsEditor() {
+    editHabitsState = getEditableSetup();
+    habitsEditorError.textContent = '';
+    editRoutinesHeading.value = editHabitsState.sectionLabels.routines;
+    editOutputHeading.value   = editHabitsState.sectionLabels.content;
+    renderEditRoutines();
+    renderEditOutput();
+    habitsEditorModal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeHabitsEditor() {
+    habitsEditorModal.classList.add('hidden');
+    document.body.style.overflow = '';
+    editHabitsState = null;
+  }
+
+  document.getElementById('editHabitsBtn').addEventListener('click', () => { closeSettings(); openHabitsEditor(); });
+  document.getElementById('habitsEditorCancel').addEventListener('click', closeHabitsEditor);
+
+  editRoutineAdd.addEventListener('click', () => {
+    const label = editRoutineLabel.value.trim();
+    if (!label) { editRoutineLabel.focus(); return; }
+    const sub = editRoutineSub.value.trim();
+    const ids = editHabitsState.habits.map(h => h.id);
+    editHabitsState.habits.push({ id: slugify(label, ids), label, sub, section: 'routines', xp: 10 });
+    editRoutineLabel.value = ''; editRoutineSub.value = '';
+    editRoutineLabel.focus();
+    renderEditRoutines();
+  });
+  editRoutineLabel.addEventListener('keydown', (e) => { if (e.key === 'Enter') editRoutineAdd.click(); });
+
+  editOutputAdd.addEventListener('click', () => {
+    const label = editOutputLabel.value.trim();
+    if (!label) { editOutputLabel.focus(); return; }
+    const sub = editOutputSub.value.trim();
+    const ids = editHabitsState.habits.map(h => h.id);
+    editHabitsState.habits.push({ id: slugify(label, ids), label, sub, section: 'content', xp: 15 });
+    editOutputLabel.value = ''; editOutputSub.value = '';
+    editOutputLabel.focus();
+    renderEditOutput();
+  });
+  editOutputLabel.addEventListener('keydown', (e) => { if (e.key === 'Enter') editOutputAdd.click(); });
+
+  document.getElementById('habitsEditorSave').addEventListener('click', () => {
+    if (editHabitsState.habits.length === 0) {
+      habitsEditorError.textContent = 'Add at least one habit before saving.';
+      return;
+    }
+    editHabitsState.sectionLabels = {
+      routines: editRoutinesHeading.value.trim() || DEFAULT_SECTION_LABELS.routines,
+      content:  editOutputHeading.value.trim()   || DEFAULT_SECTION_LABELS.content,
+    };
+    localStorage.setItem(KEYS.setup, JSON.stringify(editHabitsState));
+    sync.push();
+    closeHabitsEditor();
+    renderAll(player, habits, log, missions, onMissionUpdate);
+  });
+
+  // -- Edit Goals ---------------------------------------------------
+  const goalsEditorModal   = document.getElementById('goalsEditorModal');
+  const goalsEditorError   = document.getElementById('goalsEditorError');
+  const goalsEditorColumns = document.getElementById('goalsEditorColumns');
+
+  let editGoalsState = null;
+
+  function missionSubLabel(m) {
+    if (m.subGoals) return `${m.subGoals.length} sub-goal${m.subGoals.length === 1 ? '' : 's'}`;
+    if (m.progress) return `progress: ${m.progress.current}/${m.progress.total}`;
+    return '';
+  }
+
+  function renderEditGoalsColumns() {
+    goalsEditorColumns.innerHTML = '';
+    editGoalsState.columns.forEach(col => {
+      const colEl = document.createElement('div');
+      colEl.className = 'ob-mission-col';
+
+      const hdr = document.createElement('input');
+      hdr.className = 'editor-heading-input';
+      hdr.type = 'text';
+      hdr.maxLength = 30;
+      hdr.value = col.label;
+      hdr.addEventListener('input', () => { col.label = hdr.value; });
+      colEl.appendChild(hdr);
+
+      const addRow = document.createElement('div');
+      addRow.className = 'ob-mission-add-row';
+      const inp = document.createElement('input');
+      inp.className = 'ob-input ob-input-sm';
+      inp.placeholder = 'Goal name';
+      inp.maxLength = 60;
+      const addBtn = document.createElement('button');
+      addBtn.className = 'ob-add-btn';
+      addBtn.textContent = '+ Add';
+      addRow.appendChild(inp); addRow.appendChild(addBtn);
+      colEl.appendChild(addRow);
+
+      const listEl = document.createElement('div');
+      listEl.className = 'ob-list';
+      colEl.appendChild(listEl);
+
+      function refreshList() {
+        const missionsInCol = editGoalsState.missions.filter(m => m.column === col.key);
+        renderList(listEl, missionsInCol.map(m => ({ label: m.label, sub: missionSubLabel(m) })), (i) => {
+          const id = missionsInCol[i].id;
+          editGoalsState.missions = editGoalsState.missions.filter(m => m.id !== id);
+          refreshList();
+        });
+      }
+
+      function addMission() {
+        const label = inp.value.trim();
+        if (!label) { inp.focus(); return; }
+        const ids = editGoalsState.missions.map(m => m.id);
+        editGoalsState.missions.push({ id: slugify(label, ids), label, column: col.key, xp: 500 });
+        inp.value = '';
+        inp.focus();
+        refreshList();
+      }
+
+      addBtn.addEventListener('click', addMission);
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') addMission(); });
+
+      refreshList();
+      goalsEditorColumns.appendChild(colEl);
+    });
+  }
+
+  function openGoalsEditor() {
+    editGoalsState = getEditableSetup();
+    goalsEditorError.textContent = '';
+    renderEditGoalsColumns();
+    goalsEditorModal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeGoalsEditor() {
+    goalsEditorModal.classList.add('hidden');
+    document.body.style.overflow = '';
+    editGoalsState = null;
+  }
+
+  document.getElementById('editGoalsBtn').addEventListener('click', () => { closeSettings(); openGoalsEditor(); });
+  document.getElementById('goalsEditorCancel').addEventListener('click', closeGoalsEditor);
+
+  document.getElementById('goalsEditorSave').addEventListener('click', () => {
+    if (editGoalsState.missions.length === 0) {
+      goalsEditorError.textContent = 'Add at least one goal before saving.';
+      return;
+    }
+    if (editGoalsState.columns.some(c => !c.label.trim())) {
+      goalsEditorError.textContent = 'Column names can\'t be empty.';
+      return;
+    }
+    localStorage.setItem(KEYS.setup, JSON.stringify(editGoalsState));
+    sync.push();
+    closeGoalsEditor();
+    renderAll(player, habits, log, missions, onMissionUpdate);
   });
 
   exportBtn.addEventListener('click', () => {
