@@ -1810,8 +1810,10 @@ const habitLogic = {
     if (log[yesterday]?.[id]) return { log, habits };
     const newLog = { ...log, [yesterday]: { ...(log[yesterday] || {}), [id]: true } };
     const ex = habits[id] || { streak: 0, lastCompleted: null };
-    const newStreak = ex.lastCompleted === twoDaysAgo ? ex.streak + 1 : 1;
-    const newHabits = { ...habits, [id]: { streak: newStreak, lastCompleted: yesterday } };
+    // If the chain is otherwise unbroken, restore the streak from before
+    // validateStreaks() zeroed it, rather than counting up from 0.
+    const baseStreak = ex.lastCompleted === twoDaysAgo ? (ex.prevStreak ?? ex.streak) : 0;
+    const newHabits = { ...habits, [id]: { streak: baseStreak + 1, lastCompleted: yesterday } };
     return { log: newLog, habits: newHabits };
   },
   complete(log, habits, id) {
@@ -1830,8 +1832,10 @@ const habitLogic = {
     const out = { ...habits };
     for (const id in out) {
       const h = out[id];
-      if (h.lastCompleted && h.lastCompleted !== today && h.lastCompleted !== yesterday)
-        out[id] = { ...h, streak: 0 };
+      if (h.lastCompleted && h.lastCompleted !== today && h.lastCompleted !== yesterday && h.streak > 0)
+        // Remember the streak being zeroed so completeYesterday() can
+        // restore it if the missed day gets backfilled via the Yesterday toggle.
+        out[id] = { ...h, streak: 0, prevStreak: h.streak };
     }
     return out;
   },
