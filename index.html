@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LIFE RPG</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>WinLife</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   /* ============================================================
      CSS VARIABLES
@@ -36,7 +36,7 @@
     --text-secondary: #8a8680;
     --text-dim:       #4a4845;
 
-    --font-display:   'DM Serif Display', Georgia, serif;
+    --font-display:   'Outfit', system-ui, sans-serif;
     --font-body:      'DM Sans', system-ui, sans-serif;
     --font-mono:      'DM Mono', monospace;
 
@@ -83,7 +83,7 @@
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border-bottom: 1px solid var(--border);
-    padding: 14px 20px 16px;
+    padding: calc(14px + env(safe-area-inset-top)) 20px 16px;
   }
 
   .header-top {
@@ -96,7 +96,7 @@
   .game-title {
     font-family: var(--font-display);
     font-size: 18px;
-    font-style: italic;
+    font-weight: 600;
     color: var(--text-primary);
     letter-spacing: 0.02em;
   }
@@ -213,7 +213,7 @@
   .section-title {
     font-family: var(--font-display);
     font-size: 17px;
-    font-style: italic;
+    font-weight: 600;
     color: var(--text-primary);
   }
 
@@ -502,7 +502,7 @@
 
   .levelup-number {
     font-family: var(--font-display);
-    font-style: italic;
+    font-weight: 700;
     font-size: 80px;
     color: var(--text-primary);
     line-height: 1;
@@ -525,7 +525,7 @@
     bottom: 0; left: 0; right: 0;
     background: rgba(17, 17, 16, 0.97);
     border-top: 1px solid var(--border);
-    padding: 10px 20px;
+    padding: 10px 20px calc(10px + env(safe-area-inset-bottom));
     display: flex;
     justify-content: space-around;
     align-items: center;
@@ -541,7 +541,7 @@
 
   .stat-value {
     font-family: var(--font-display);
-    font-style: italic;
+    font-weight: 600;
     font-size: 20px;
     color: var(--text-primary);
     line-height: 1;
@@ -623,6 +623,7 @@
   .missions-title {
     font-family: var(--font-display);
     font-size: 22px;
+    font-weight: 600;
     color: var(--text-primary);
   }
   .missions-sub {
@@ -647,10 +648,11 @@
 
   .mission-col-header {
     font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.14em;
+    font-weight: 500;
+    font-size: 11px;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: var(--text-dim);
+    color: var(--amber);
     padding: 16px 8px 8px;
     border-bottom: 1px solid var(--border);
     margin-bottom: 4px;
@@ -912,6 +914,7 @@
   .ob-title {
     font-family: var(--font-display);
     font-size: 32px;
+    font-weight: 700;
     color: var(--text-primary);
     line-height: 1.1;
   }
@@ -1109,6 +1112,7 @@
   .feedback-title {
     font-family: var(--font-display);
     font-size: 20px;
+    font-weight: 600;
     color: var(--text-primary);
   }
 
@@ -1235,7 +1239,7 @@
 
 <header class="player-header">
   <div class="header-top">
-    <span class="game-title">Life RPG</span>
+    <span class="game-title">WinLife</span>
     <div class="header-right">
       <span class="player-level" id="levelDisplay">LVL 01</span>
       <button class="settings-btn" id="settingsBtn" title="Settings">⚙</button>
@@ -1334,7 +1338,7 @@
 <div class="onboarding-overlay" id="authOverlay">
   <div class="ob-screen active">
     <div class="ob-inner">
-      <div class="ob-eyebrow">Life RPG</div>
+      <div class="ob-eyebrow">WinLife</div>
       <h1 class="ob-title" id="authTitle">Welcome back.</h1>
       <p class="ob-sub" id="authSub">Sign in to sync your progress across devices.</p>
       <input class="ob-input" id="authEmail" type="email" placeholder="Email" autocomplete="email">
@@ -1354,7 +1358,7 @@
   <!-- Screen 1: Name -->
   <div class="ob-screen active" id="obName">
     <div class="ob-inner">
-      <div class="ob-eyebrow">Life RPG</div>
+      <div class="ob-eyebrow">WinLife</div>
       <h1 class="ob-title">Welcome, Hero.</h1>
       <p class="ob-sub">Type your name to start winning today.</p>
       <input class="ob-input" id="obNameInput" type="text" placeholder="Your name" maxlength="24" autocomplete="off">
