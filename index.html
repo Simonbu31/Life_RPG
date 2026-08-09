@@ -1840,15 +1840,27 @@ const habitLogic = {
   },
   completeYesterday(log, habits, id) {
     const yesterday  = habitLogic.yesterdayKey();
+    const today      = habitLogic.todayKey();
     const d2 = new Date(); d2.setDate(d2.getDate() - 2);
     const twoDaysAgo = d2.toISOString().slice(0, 10);
     if (log[yesterday]?.[id]) return { log, habits };
     const newLog = { ...log, [yesterday]: { ...(log[yesterday] || {}), [id]: true } };
     const ex = habits[id] || { streak: 0, lastCompleted: null };
-    // If the chain is otherwise unbroken, restore the streak from before
-    // validateStreaks() zeroed it, rather than counting up from 0.
-    const baseStreak = ex.lastCompleted === twoDaysAgo ? (ex.prevStreak ?? ex.streak) : 0;
-    const newHabits = { ...habits, [id]: { streak: baseStreak + 1, lastCompleted: yesterday } };
+    const todayDone = !!log[today]?.[id];
+    let newStreak, newLastCompleted;
+    if (todayDone) {
+      // Today was already logged first; backfilling yesterday extends that
+      // same streak by a day rather than restarting the chain at yesterday.
+      newStreak = ex.streak + 1;
+      newLastCompleted = today;
+    } else {
+      // If the chain is otherwise unbroken, restore the streak from before
+      // validateStreaks() zeroed it, rather than counting up from 0.
+      const baseStreak = ex.lastCompleted === twoDaysAgo ? (ex.prevStreak ?? ex.streak) : 0;
+      newStreak = baseStreak + 1;
+      newLastCompleted = yesterday;
+    }
+    const newHabits = { ...habits, [id]: { ...ex, streak: newStreak, lastCompleted: newLastCompleted } };
     return { log: newLog, habits: newHabits };
   },
   complete(log, habits, id) {
@@ -1858,7 +1870,7 @@ const habitLogic = {
     log = { ...log, [today]: { ...(log[today] || {}), [id]: true } };
     const ex = habits[id] || { streak: 0, lastCompleted: null };
     const streak = ex.lastCompleted === yesterday ? ex.streak + 1 : 1;
-    habits = { ...habits, [id]: { streak, lastCompleted: today } };
+    habits = { ...habits, [id]: { ...ex, streak, lastCompleted: today } };
     return { log, habits };
   },
   validateStreaks(habits) {
