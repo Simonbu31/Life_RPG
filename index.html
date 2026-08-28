@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>WinLife</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  // Only load the native notifications bridge inside the WinLife app shell -
+  // this file references a Capacitor-only global and would throw on plain web.
+  if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
+    var lnScript = document.createElement('script');
+    lnScript.src = 'local-notifications.js';
+    document.head.appendChild(lnScript);
+  }
+</script>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   /* ============================================================
@@ -1433,6 +1442,11 @@
     <div class="settings-title" style="margin-top:8px">Customize</div>
     <button class="settings-action" id="editHabitsBtn">✎ Edit Habits</button>
     <button class="settings-action" id="editGoalsBtn">✎ Edit Goals</button>
+    <div class="settings-title" style="margin-top:8px">Notifications</div>
+    <button class="settings-action" id="reminderBtn" style="display:flex; justify-content:space-between; align-items:center;">
+      <span>🔔 Daily Reminder</span>
+      <span id="reminderStatus" style="color:var(--text-dim); font-size:10px;">Off</span>
+    </button>
     <div class="settings-title" style="margin-top:8px">Account</div>
     <button class="settings-action" id="signOutBtn">→ Sign out</button>
     <button class="settings-action settings-danger" id="deleteAccountBtn">✕ Delete Account</button>
@@ -1463,6 +1477,22 @@
     <div class="feedback-actions">
       <button class="ob-skip" id="deleteAccountCancel">Cancel</button>
       <button class="ob-btn" id="deleteAccountConfirm" style="margin-top:0; padding: 10px 20px; background:#e05c5c; color:#1a0a0a;">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="feedback-modal hidden" id="reminderModal">
+  <div class="feedback-box">
+    <div class="feedback-title">Daily Reminder</div>
+    <p class="feedback-sub">Get a nudge at the same time every day, plus an extra alert at 18:00 if a streak over 3 days is about to break.</p>
+    <input class="ob-input" type="time" id="reminderTimeInput" value="12:00" style="margin-top:4px; width:100%; box-sizing:border-box;">
+    <div class="feedback-error" id="reminderError"></div>
+    <div class="feedback-actions" style="justify-content:space-between;">
+      <button class="ob-skip" id="reminderTurnOff" style="display:none; color:#e05c5c;">Turn off</button>
+      <div style="display:flex; align-items:center; gap:16px;">
+        <button class="ob-skip" id="reminderCancel">Cancel</button>
+        <button class="ob-btn" id="reminderSave" style="margin-top:0; padding: 10px 20px;">Save</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1926,6 +1956,114 @@ function saveState(player, habits, log) {
   localStorage.setItem(KEYS.habits, JSON.stringify(habits));
   localStorage.setItem(KEYS.log,    JSON.stringify(log));
   sync.push(); // background cloud sync
+  refreshStreakReminder(habits, log); // fire-and-forget, no-op on web
+}
+
+/* ================================================================
+   REMINDERS (native local notifications, no-op on web)
+   - Daily reminder: repeating notification at a user-set time.
+     Default (if the user has never touched this): ON, at 12:00 noon.
+   - Streak-protection reminder: recomputed on every state save + on
+     app open, for TODAY only. Points at the highest streak (>3 days)
+     that hasn't been completed yet, fires at 18:00. Since there's no
+     background execution here, this only stays accurate if the app
+     is opened again the next day to recompute it - acceptable for a
+     no-backend local app.
+   ================================================================ */
+const REMINDER_KEY          = 'lifeRPG_reminder';
+const REMINDER_NOTIF_ID     = 1001; // daily reminder
+const STREAK_NOTIF_ID       = 1002; // streak-protection reminder
+const REMINDER_DEFAULT      = { enabled: true, hour: 12, minute: 0 };
+const STREAK_RISK_THRESHOLD = 3;
+const STREAK_RISK_HOUR      = 18;
+
+function isNativeApp() {
+  return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+}
+function getLocalNotifications() {
+  return window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications;
+}
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+function loadReminder() {
+  try {
+    const stored = localStorage.getItem(REMINDER_KEY);
+    return stored ? JSON.parse(stored) : { ...REMINDER_DEFAULT };
+  } catch { return { ...REMINDER_DEFAULT }; }
+}
+function saveReminderState(state) { localStorage.setItem(REMINDER_KEY, JSON.stringify(state)); }
+
+async function cancelReminderNotification(id) {
+  const ln = getLocalNotifications();
+  if (ln) { try { await ln.cancel({ notifications: [{ id }] }); } catch {} }
+}
+
+async function scheduleDailyReminder(hour, minute) {
+  const ln = getLocalNotifications();
+  if (!ln) return false;
+  const perm = await ln.requestPermissions();
+  if (perm.display !== 'granted') return false;
+  await cancelReminderNotification(REMINDER_NOTIF_ID);
+  await ln.schedule({
+    notifications: [{
+      id: REMINDER_NOTIF_ID,
+      title: 'WinLife',
+      body: "Don't forget today's habits — keep the streak alive.",
+      schedule: { on: { hour, minute }, repeats: true, allowWhileIdle: true }
+    }]
+  });
+  return true;
+}
+
+// Applies the "on at 12:00" default exactly once, the first time this
+// version's reminder feature runs on a given install (i.e. the user has
+// never touched the Daily Reminder setting, including pre-upgrade users).
+async function applyDefaultReminderIfNeeded() {
+  if (localStorage.getItem(REMINDER_KEY) !== null) return; // already decided, respect it
+  if (!isNativeApp()) { saveReminderState({ ...REMINDER_DEFAULT }); return; }
+  const ok = await scheduleDailyReminder(REMINDER_DEFAULT.hour, REMINDER_DEFAULT.minute);
+  saveReminderState(ok ? { ...REMINDER_DEFAULT } : { ...REMINDER_DEFAULT, enabled: false });
+}
+
+// Recomputes today's streak-protection notification. Cancels it outright
+// if reminders are off, nothing is at risk, or 18:00 has already passed.
+async function refreshStreakReminder(habits, log) {
+  if (!isNativeApp()) return;
+  const ln = getLocalNotifications();
+  if (!ln) return;
+
+  const reminder = loadReminder();
+  if (!reminder.enabled) { await cancelReminderNotification(STREAK_NOTIF_ID); return; }
+
+  const today = habitLogic.todayKey();
+  let best = null;
+  for (const def of getHabitDefs()) {
+    const rec = habits[def.id];
+    if (!rec || rec.streak <= STREAK_RISK_THRESHOLD) continue;
+    if (habitLogic.isCompletedToday(log, def.id)) continue;
+    if (habitLogic.isSkippedToday(log, def.id)) continue;
+    if (!best || rec.streak > best.streak) best = { label: def.label, streak: rec.streak };
+  }
+
+  if (!best) { await cancelReminderNotification(STREAK_NOTIF_ID); return; }
+
+  const target = new Date();
+  target.setHours(STREAK_RISK_HOUR, 0, 0, 0);
+  if (target <= new Date()) { await cancelReminderNotification(STREAK_NOTIF_ID); return; }
+
+  try {
+    const perm = await ln.requestPermissions();
+    if (perm.display !== 'granted') return;
+    await cancelReminderNotification(STREAK_NOTIF_ID);
+    await ln.schedule({
+      notifications: [{
+        id: STREAK_NOTIF_ID,
+        title: 'WinLife',
+        body: `Don't lose your ${best.streak}-day streak on ${best.label}!`,
+        schedule: { at: target, allowWhileIdle: true }
+      }]
+    });
+  } catch (e) { console.error('Streak reminder schedule error:', e); }
 }
 
 /* ================================================================
@@ -2795,6 +2933,11 @@ function init() {
   let { player, habits, log, missions } = loadState();
   log = checkMidnightReset(log);
 
+  // Reminders: apply the "on at noon" default on first run, then make sure
+  // today's streak-protection alert (if any) is scheduled even if the user
+  // just opens the app without completing/skipping anything.
+  applyDefaultReminderIfNeeded().then(() => refreshStreakReminder(habits, log));
+
   const onMissionUpdate = (xpAmount) => {
     const result = xpLogic.addXP(player, xpAmount);
     player = result.player;
@@ -2926,6 +3069,76 @@ function init() {
       deleteAccountError.textContent = 'Failed to delete: ' + e.message;
       deleteAccountConfirm.textContent = 'Delete';
       deleteAccountConfirm.disabled = false;
+    }
+  });
+
+  // -- Daily Reminder (native local notification, no-op on web) --
+  // Core logic (defaults, scheduling, streak-risk computation) lives in
+  // top-level helpers shared with saveState() - this block is just the UI.
+  const reminderBtn      = document.getElementById('reminderBtn');
+  const reminderStatus   = document.getElementById('reminderStatus');
+  const reminderModal    = document.getElementById('reminderModal');
+  const reminderTimeInput= document.getElementById('reminderTimeInput');
+  const reminderError    = document.getElementById('reminderError');
+  const reminderSave     = document.getElementById('reminderSave');
+  const reminderCancel   = document.getElementById('reminderCancel');
+  const reminderTurnOff  = document.getElementById('reminderTurnOff');
+
+  function renderReminderStatus() {
+    const r = loadReminder();
+    reminderStatus.textContent = r.enabled ? `On · ${pad2(r.hour)}:${pad2(r.minute)}` : 'Off';
+  }
+  renderReminderStatus();
+
+  reminderBtn.addEventListener('click', () => {
+    closeSettings();
+    reminderError.textContent = '';
+    const r = loadReminder();
+    reminderTimeInput.value = `${pad2(r.hour)}:${pad2(r.minute)}`;
+    reminderTurnOff.style.display = r.enabled ? '' : 'none';
+    reminderModal.classList.remove('hidden');
+  });
+
+  reminderCancel.addEventListener('click', () => reminderModal.classList.add('hidden'));
+
+  reminderTurnOff.addEventListener('click', async () => {
+    await cancelReminderNotification(REMINDER_NOTIF_ID);
+    await cancelReminderNotification(STREAK_NOTIF_ID);
+    saveReminderState({ enabled: false, hour: REMINDER_DEFAULT.hour, minute: REMINDER_DEFAULT.minute });
+    renderReminderStatus();
+    reminderModal.classList.add('hidden');
+  });
+
+  reminderSave.addEventListener('click', async () => {
+    reminderError.textContent = '';
+    const [hh, mm] = (reminderTimeInput.value || '12:00').split(':').map(Number);
+
+    if (!isNativeApp()) {
+      // Web build: just persist the preference, nothing to schedule.
+      saveReminderState({ enabled: true, hour: hh, minute: mm });
+      renderReminderStatus();
+      reminderModal.classList.add('hidden');
+      return;
+    }
+
+    try {
+      reminderSave.textContent = '...';
+      reminderSave.disabled = true;
+      const ok = await scheduleDailyReminder(hh, mm);
+      if (!ok) {
+        reminderError.textContent = 'Notification permission was denied. Enable it in Settings > WinLife > Notifications.';
+        return;
+      }
+      saveReminderState({ enabled: true, hour: hh, minute: mm });
+      renderReminderStatus();
+      reminderModal.classList.add('hidden');
+      refreshStreakReminder(getState().habits, getState().log); // re-evaluate now that reminders are on
+    } catch (e) {
+      console.error('Reminder schedule error:', e);
+      reminderError.textContent = 'Could not schedule reminder: ' + e.message;
+    } finally {
+      reminderSave.textContent = 'Save';
+      reminderSave.disabled = false;
     }
   });
 
