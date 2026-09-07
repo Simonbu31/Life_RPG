@@ -3,8 +3,8 @@
 ## What this is
 A personal habit tracker styled as a video game character sheet. Single HTML file, vanilla JS, no frameworks. Hosted on GitHub Pages.
 
-**Live URL:** https://simonbu31.github.io/Life_RPG/
-**Repo:** https://github.com/Simonbu31/Life_RPG
+**Live URL:** https://simonbu31.github.io/WinLife/
+**Repo:** https://github.com/Simonbu31/WinLife
 **File:** `index.html` (everything is in this one file)
 
 ---
